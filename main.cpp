@@ -1179,7 +1179,7 @@ __declspec( dllimport ) void Apply_DLL_Mode();
 
     BOOL doInit( HINSTANCE hInstance, int nCmdShow );
     void finiObjects( void );
-    long FAR PASCAL WindowProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam );
+    LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     //long FAR PASCAL WindowProc2( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam );
 
     
@@ -6508,7 +6508,7 @@ void TryToExit(HWND hWnd)
 #endif
 
 
-long FAR PASCAL WindowProc( HWND hWnd, UINT message, 
+LRESULT CALLBACK WindowProc(HWND hWnd, UINT message,
                 WPARAM wParam, LPARAM lParam )
 {
     //PAINTSTRUCT ps;
