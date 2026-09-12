@@ -312,6 +312,7 @@ void Check_For_New_Song_Title()
 		}
 	}
 
+#if defined(_M_IX86)
 	void Merge_All_VS_To_Backbuffer()
 	{
 
@@ -1076,6 +1077,71 @@ void Check_For_New_Song_Title()
 
 		blit_clock_time += clock() - temp_clock;
 	}
+
+#else
+
+#include <ppl.h>
+
+	void Merge_All_VS_To_Backbuffer()
+	{
+		DDSURFACEDESC ddsd = {};
+		ddsd.dwSize = sizeof(ddsd);
+		const clock_t started = clock();
+		if (lpDDSBack->Lock(NULL, &ddsd, DDLOCK_WAIT, NULL) != DD_OK)
+		{
+			iBlendsLeftInPal = 3;
+			return;
+		}
+
+		const int firstRow = static_cast<int>(FX_YCUT_HIDE);
+		const int lastRow = static_cast<int>(FXH - FX_YCUT_HIDE);
+		unsigned char* surface = static_cast<unsigned char*>(ddsd.lpSurface);
+
+		Concurrency::parallel_for(firstRow, lastRow, [&](int y)
+		{
+			unsigned char* out = surface + static_cast<size_t>(y) * ddsd.lPitch;
+			if (iDispBits == 8)
+			{
+				memcpy(out, VS1 + static_cast<size_t>(y) * FXW, static_cast<size_t>(FXW));
+				return;
+			}
+
+			const unsigned __int32* in = reinterpret_cast<const unsigned __int32*>(VS1)
+				+ static_cast<size_t>(y) * FXW;
+			for (int x = 0; x < FXW; ++x)
+			{
+				const unsigned __int32 pixel = in[x];
+				const unsigned char red = REMAP[(pixel >> 16) & 255];
+				const unsigned char green = REMAP[(pixel >> 8) & 255];
+				const unsigned char blue = REMAP[pixel & 255];
+
+				if (iDispBits == 16)
+				{
+					WORD* out16 = reinterpret_cast<WORD*>(out);
+					out16[x] = VIDEO_CARD_FUCKED == 1
+						? static_cast<WORD>(((red >> 3) << 10) | ((green >> 3) << 5) | (blue >> 3))
+						: static_cast<WORD>(((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3));
+				}
+				else if (iDispBits == 24)
+				{
+					out[x * 3] = blue;
+					out[x * 3 + 1] = green;
+					out[x * 3 + 2] = red;
+				}
+				else
+				{
+					DWORD* out32 = reinterpret_cast<DWORD*>(out);
+					out32[x] = static_cast<DWORD>((red << 16) | (green << 8) | blue);
+				}
+			}
+		});
+
+		if (lpDDSBack->Unlock(NULL) != DD_OK)
+			dumpmsg("Merge_All_VS_To_Backbuffer: lpDDSBack->Unlock() failed");
+		blit_clock_time += clock() - started;
+	}
+
+#endif
 
 	void Put_FPS_To_Backbuffer()
 	{

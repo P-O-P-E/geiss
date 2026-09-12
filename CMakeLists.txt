@@ -32,9 +32,20 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
-cmake_minimum_required(VERSION 3.15.0)  # for property MSVC_RUNTIME_LIBRARY
+cmake_minimum_required(VERSION 3.20)
 
-project(geiss)
+project(geiss LANGUAGES CXX RC)
+
+if(NOT WIN32)
+    message(FATAL_ERROR "Geiss currently targets Windows.")
+endif()
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    set(_GEISS_LEGACY_DEFAULT ON)
+else()
+    set(_GEISS_LEGACY_DEFAULT OFF)
+endif()
+option(GEISS_BUILD_LEGACY "Build the legacy 32-bit screensaver and Winamp plug-in" ${_GEISS_LEGACY_DEFAULT})
 
 set(_GEISS_SOURCES
 #   AFXRES.H
@@ -60,15 +71,40 @@ set(_GEISS_SOURCES
 #   VIS.H
 )
 
-add_executable(geiss_scr WIN32 ${_GEISS_SOURCES})
-target_compile_definitions(geiss_scr PRIVATE SAVER)
+add_executable(geiss WIN32 ${_GEISS_SOURCES} app.manifest)
+target_compile_features(geiss PRIVATE cxx_std_17)
+target_compile_definitions(geiss PRIVATE
+    SAVER
+    STANDALONE
+    WIN32_LEAN_AND_MEAN
+    _CRT_SECURE_NO_WARNINGS
+    _WIN32_WINNT=0x0A00
+    WINVER=0x0A00)
+target_link_libraries(geiss PRIVATE comctl32.lib ddraw.lib dsound.lib dxguid.lib winmm.lib shcore.lib)
+set_target_properties(geiss PROPERTIES
+    OUTPUT_NAME "Geiss"
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    VS_DPI_AWARE "PerMonitor")
 
-# NOTE: Only a single "s" due to 8.3 naming limitations back then
-add_library(vis_geis MODULE ${_GEISS_SOURCES})
-target_compile_definitions(vis_geis PRIVATE PLUGIN)
+if(MSVC)
+    target_compile_options(geiss PRIVATE /W4 /Zc:__cplusplus /EHsc)
+    target_link_options(geiss PRIVATE /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT)
+endif()
 
-foreach(_target geiss_scr vis_geis)
-    target_link_libraries(${_target} comctl32.lib ddraw.lib dsound.lib dxguid.lib winmm.lib)
-    # NOTE: Wine doesn't come with debug(!) DLL "VCRUNTIME140D.dll" so we use the non-DLL CRT version:
-    set_target_properties(${_target} PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endforeach()
+if(GEISS_BUILD_LEGACY)
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
+        message(FATAL_ERROR "GEISS_BUILD_LEGACY requires a Win32 generator (-A Win32).")
+    endif()
+
+    add_executable(geiss_scr WIN32 ${_GEISS_SOURCES})
+    target_compile_definitions(geiss_scr PRIVATE SAVER)
+
+    # NOTE: Only a single "s" due to 8.3 naming limitations back then
+    add_library(vis_geis MODULE ${_GEISS_SOURCES})
+    target_compile_definitions(vis_geis PRIVATE PLUGIN)
+
+    foreach(_target geiss_scr vis_geis)
+        target_link_libraries(${_target} PRIVATE comctl32.lib ddraw.lib dsound.lib dxguid.lib winmm.lib)
+        set_target_properties(${_target} PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endforeach()
+endif()

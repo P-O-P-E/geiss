@@ -54,6 +54,7 @@ extern int slider1;
 extern bool bMMX;
 //-----------------------
 
+#if defined(_M_IX86)
 
 
 //------------------------------------------------------------------
@@ -1082,7 +1083,106 @@ void Process_Map(void *p1, void *p2)//, LPDIRECTDRAWSURFACE lpDDSurf)
 
 }
 
+#else
 
+#include <ppl.h>
+#include <stdint.h>
+#include <string.h>
+#include <vector>
+
+extern int g_nCores;
+
+namespace
+{
+    int ReadDelta(const unsigned char* packet)
+    {
+        int delta;
+        memcpy(&delta, packet + 4, sizeof(delta));
+        return delta;
+    }
+
+    std::vector<int> BuildRowStarts(const unsigned char* packets, int rows, int width)
+    {
+        std::vector<int> starts(static_cast<size_t>(rows));
+        int lookat = 0;
+        for (int y = 0; y < rows; ++y)
+        {
+            starts[static_cast<size_t>(y)] = lookat;
+            const unsigned char* row = packets + static_cast<size_t>(y) * width * 8;
+            for (int x = 0; x < width; ++x)
+                lookat += ReadDelta(row + static_cast<size_t>(x) * 8);
+        }
+        return starts;
+    }
+}
+
+void Process_Map(void* p1, void* p2)
+{
+    const clock_t started = clock();
+    const int rows = static_cast<int>(FXH - FX_YCUT * 2);
+    const int width = static_cast<int>(FXW);
+    if (!p1 || !p2 || !DATA_FX || rows <= 0 || width <= 0)
+        return;
+
+    const unsigned char* packets = DATA_FX + FX_YCUT_xFXW_x8;
+    const std::vector<int> rowStarts = BuildRowStarts(packets, rows, width);
+
+    // The Windows Concurrency Runtime owns and reuses the worker pool, avoiding
+    // per-frame thread creation while allowing independent scanlines to scale.
+    Concurrency::parallel_for(0, rows, [&](int rowIndex)
+    {
+        const unsigned char* rowPackets = packets + static_cast<size_t>(rowIndex) * width * 8;
+        int lookat = rowStarts[static_cast<size_t>(rowIndex)];
+
+        if (iDispBits == 8)
+        {
+            const unsigned char* source = static_cast<const unsigned char*>(p1) + slider1;
+            unsigned char* destination = static_cast<unsigned char*>(p2)
+                + static_cast<size_t>(FX_YCUT + rowIndex) * width;
+
+            for (int x = 0; x < width; ++x)
+            {
+                const unsigned char* packet = rowPackets + static_cast<size_t>(x) * 8;
+                lookat += ReadDelta(packet);
+                const unsigned int value =
+                    source[lookat] * packet[0] +
+                    source[lookat + 1] * packet[1] +
+                    source[lookat + width] * packet[2] +
+                    source[lookat + width + 1] * packet[3];
+                destination[x] = static_cast<unsigned char>(value >> 8);
+            }
+        }
+        else
+        {
+            const unsigned char* source = static_cast<const unsigned char*>(p1) + slider1 * 4;
+            unsigned char* destination = static_cast<unsigned char*>(p2)
+                + static_cast<size_t>(FX_YCUT + rowIndex) * width * 4;
+            const int stride = width * 4;
+
+            for (int x = 0; x < width; ++x)
+            {
+                const unsigned char* packet = rowPackets + static_cast<size_t>(x) * 8;
+                lookat += ReadDelta(packet);
+                for (int channel = 0; channel < 3; ++channel)
+                {
+                    const int sample = lookat + channel;
+                    const unsigned int value =
+                        source[sample] * packet[0] +
+                        source[sample + 4] * packet[1] +
+                        source[sample + stride] * packet[2] +
+                        source[sample + stride + 4] * packet[3];
+                    destination[static_cast<size_t>(x) * 4 + channel] =
+                        static_cast<unsigned char>(value >> 8);
+                }
+                destination[static_cast<size_t>(x) * 4 + 3] = 0;
+            }
+        }
+    });
+
+    core_clock_time += clock() - started;
+}
+
+#endif
 
 #endif
 

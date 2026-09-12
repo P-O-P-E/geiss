@@ -502,6 +502,7 @@ saving favorite combinations (10 or so)
 #include "resource.h"
 #include <stdio.h>        // for sprintf() for fps display
 #include <stdarg.h>
+#include <stdint.h>
 #if SAVER
 #include <mmsystem.h>   // for mci/cd stuff
 #endif
@@ -512,7 +513,10 @@ saving favorite combinations (10 or so)
 //#endif
 
 //for Geiss:
-#if SAVER
+#if defined(STANDALONE)
+    #define NAME "Geiss Standalone"
+    #define TITLE "Geiss"
+#elif SAVER
     #define NAME "Geiss screensaver"
     #define TITLE "Geiss screensaver"
 #else
@@ -674,7 +678,11 @@ void GetDesktopDisplayMode()
 
 
 
-    #define APPREGPATH "SOFTWARE\\geissscreensaver"
+    #if defined(STANDALONE)
+        #define APPREGPATH "SOFTWARE\\Geiss\\Standalone"
+    #else
+        #define APPREGPATH "SOFTWARE\\geissscreensaver"
+    #endif
 
 
 
@@ -1373,7 +1381,7 @@ HWND WINAPI CreateTrackbar(
     UINT iSelMax)  // maximum value in trackbar selection 
 { 
  
-    InitCommonControls(); // loads common control’s DLL 
+    InitCommonControls(); // loads common controlâ€™s DLL
  
     hwndTrack = CreateWindowEx( 
         0,                             // no extended styles 
@@ -3306,7 +3314,7 @@ int WINAPI WinMain(HINSTANCE h,HINSTANCE,LPSTR,int)
     //start_clock = clock();
 
 
-    REMAP = (unsigned char *)(((((DWORD)_REMAP_VALUES)+255)/256)*256);
+    REMAP = reinterpret_cast<unsigned char *>((reinterpret_cast<uintptr_t>(_REMAP_VALUES) + 255u) & ~uintptr_t(255u));
     REMAP2 = &REMAP[256];
     REMAP3 = &REMAP[512];
 
@@ -3330,7 +3338,9 @@ int WINAPI WinMain(HINSTANCE h,HINSTANCE,LPSTR,int)
     m_prev_end_of_frame.QuadPart = 0;
 
 
-#if SAVER
+#if defined(STANDALONE)
+    ScrMode = smSaver;
+#elif SAVER
     char *c=GetCommandLine();
 
     ScrMode = smNone;
@@ -3492,7 +3502,9 @@ int WINAPI WinMain(HINSTANCE h,HINSTANCE,LPSTR,int)
   #if PLUGIN
       sprintf(buf, "Geiss for Winamp debug file, version %d", CURRENT_GEISS_VERSION);
   #endif
-  #if SAVER
+  #if defined(STANDALONE)
+      sprintf(buf, "Geiss Standalone debug file, version %d", CURRENT_GEISS_VERSION);
+  #elif SAVER
       sprintf(buf, "Geiss Screensaver debug file, version %d", CURRENT_GEISS_VERSION);
   #endif
   dumpmsg(buf);
@@ -3533,13 +3545,17 @@ int WINAPI WinMain(HINSTANCE h,HINSTANCE,LPSTR,int)
 
     //make sure the sliderbar, etc. controls are loaded:
     dumpmsg("InitCommonControls()...");
-    InitCommonControls(); // loads common control’s DLL 
+    InitCommonControls(); // loads common controlâ€™s DLL
 
     dumpmsg("Bringing up Config Dialog...");
     DialogBox( h, MAKEINTRESOURCE(IDD_CONFIG),
         hwnd, (DLGPROC)ConfigDialogProc );
 
+#if defined(STANDALONE)
+    ScrMode = smSaver;
+#else
     return 1;
+#endif
   }
   
   if (ScrMode==smSaver) 
@@ -6127,6 +6143,11 @@ void finiObjects( void )
 #if SAVER
 void TryToExit(HWND hWnd)
 {
+#if defined(STANDALONE)
+    g_QuitASAP = true;
+    PostMessage(hWnd, WM_CLOSE, 0, 0);
+    return;
+#endif
     // temporary palette, so password dialog is nice & visible
     if (iDispBits==8)
     {
@@ -6617,8 +6638,13 @@ long FAR PASCAL WindowProc( HWND hWnd, UINT message,
 
             //----------------------
 #if SAVER
+#if defined(STANDALONE)
+            g_QuitASAP = true;
+            break;
+#else
             if (!g_QuitASAP) return false;
             break;
+#endif
             /*
             {
                 bool CanClose = (intframe < 50) ? true : VerifyPassword(hWnd);
