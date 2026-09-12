@@ -999,7 +999,11 @@ long     BUFSIZE             =max(FXW*2, MINBUFSIZE);
     char szDEBUG[512];
     char szFPS[] = "abcdefghijkabcdefghijkabcdefghijkabcdefghijkabcdefghijk";
 #if SAVER
-    char szMCM[] = " [click mouse button to exit - press h for help] ";
+#if defined(STANDALONE)
+  char szMCM[] = " [press ESC to exit - press H for help - press C for audio settings] ";
+#else
+  char szMCM[] = " [click mouse button to exit - press h for help] ";
+#endif
 #endif
 #if PLUGIN
     char szMCM[] = " [press ESC to exit - press h for help] ";
@@ -1030,7 +1034,7 @@ long     BUFSIZE             =max(FXW*2, MINBUFSIZE);
     char szH9[] = " z x c v b r s:  << play pause stop >> repeat shuffle (Winamp) ";
 #endif
     //char szH10[]= " ESC/click: quit,        r: refresh screen edges ";
-    char szH10[]= " ESC/click: quit ";
+    char szH10[]= " ESC: quit   C: audio settings (choose microphone or Stereo Mix/output) ";
     char szCurrentCD[128];
     char szNewCD[128];
 
@@ -7082,6 +7086,16 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message,
                     break;
 
 #if SAVER
+                case 'c':
+                case 'C':
+#if defined(STANDALONE)
+                    // Standalone playback uses the same device picker as the saver.
+                    // Select a microphone or an enabled Windows "Stereo Mix"/loopback
+                    // capture endpoint, then restart playback to apply the choice.
+                    DialogBox(hInstance, MAKEINTRESOURCE(IDD_CONFIG), hWnd,
+                              (DLGPROC)ConfigDialogProc);
+                    break;
+#endif
                 case 'o':
                 case 'O':
                     if (SoundReady)
