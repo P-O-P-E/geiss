@@ -540,6 +540,11 @@ saving favorite combinations (10 or so)
 #include <commctrl.h>
 #include <shellapi.h>
 
+#if defined(STANDALONE)
+#include <shellapi.h>
+#include "standalone_audio.h"
+StandaloneAudio standaloneAudio;
+#endif
 #include "helper.h" //for GetNumCores
 
 int g_nCores = 1;
@@ -1000,7 +1005,7 @@ long     BUFSIZE             =max(FXW*2, MINBUFSIZE);
     char szFPS[] = "abcdefghijkabcdefghijkabcdefghijkabcdefghijkabcdefghijk";
 #if SAVER
 #if defined(STANDALONE)
-  char szMCM[] = " [press ESC to exit - press H for help - press C for audio settings] ";
+  char szMCM[] = " [press ESC to exit - press H for help - press Tab for menu] ";
 #else
   char szMCM[] = " [click mouse button to exit - press h for help] ";
 #endif
@@ -1013,7 +1018,7 @@ long     BUFSIZE             =max(FXW*2, MINBUFSIZE);
     char szMisc[512];
     char szTrack[] = " - stopped at track xxx/yyy -                                    ";
     
-    char szH1[] = " q/e/u/g/d/a/y: control effects ";
+    char szH1[] = " Q/E/U/G/D/A/Y: control effects ";
 #if SAVER
     //dither//char szH2[] = " i/o: toggle dither/toggle sound ";
     char szH2[] = " o: toggle sound ";
@@ -1027,14 +1032,20 @@ long     BUFSIZE             =max(FXW*2, MINBUFSIZE);
     char szH6[] = " w/p: change waveform/palette ";
     char szH7[] = " ##: pick map (01-25)";
     char szH8[] = " h/f: toggle help/fps displays ";
-#if SAVER
+#if defined(STANDALONE)
+    char szH9[] = " Tab: output/microphone, O: audio on/off ";
+#elif SAVER
     char szH9[] = " z x c v b:  << play pause stop >> (for CD) ";
 #endif
 #if PLUGIN
     char szH9[] = " z x c v b r s:  << play pause stop >> repeat shuffle (Winamp) ";
 #endif
     //char szH10[]= " ESC/click: quit,        r: refresh screen edges ";
-    char szH10[]= " ESC: quit   C: audio settings (choose microphone or Stereo Mix/output) ";
+#if defined(STANDALONE)
+    char szH10[]= " ESC: cancel command / quit, Tab: audio menu ";
+#else
+    char szH10[]= " ESC: quit ";
+#endif
     char szCurrentCD[128];
     char szNewCD[128];
 
@@ -1683,6 +1694,8 @@ BOOL __stdcall DSEnumCallback(LPGUID lpGuid,
 
     char str[1024];
 
+    if(iNumSoundDrivers>=10) return FALSE;
+    if(!lpcstrModule) lpcstrModule="";
     strcpy(str, lpcstrModule);
     int len = strlen(str);
 
@@ -1696,11 +1709,12 @@ BOOL __stdcall DSEnumCallback(LPGUID lpGuid,
     //{
         //if (strstr((char *)(str+i), "WAVEIN") || strstr((char *)(str+i), "WAVE IN"))
 
-    strcpy(szSoundDrivers[iNumSoundDrivers], lpcstrDescription);
+    strncpy(szSoundDrivers[iNumSoundDrivers], lpcstrDescription, 900);
+    szSoundDrivers[iNumSoundDrivers][900]=0;
     if (strlen(lpcstrModule) > 0)
     {
         strcat(szSoundDrivers[iNumSoundDrivers], " [");
-        strcat(szSoundDrivers[iNumSoundDrivers], lpcstrModule);
+        strncat(szSoundDrivers[iNumSoundDrivers], lpcstrModule, 100);
         strcat(szSoundDrivers[iNumSoundDrivers], "]");
     }
 
@@ -2297,6 +2311,13 @@ BOOL DoSaver(HWND hparwnd, HINSTANCE hInstance)
     if (SoundActive) dumpmsg("SoundActive=1"); else dumpmsg("SoundActive=0");
     if (SoundEmpty) dumpmsg("SoundEmpty=1"); else dumpmsg("SoundEmpty=0");
 
+#if defined(STANDALONE)
+      g_bDisableCdControls=true; g_bAutostartCD=false;
+      iCurSoundDriver=(iCurSoundDriver==1)?1:0;
+      SoundReady=TRUE;
+      SoundActive=SoundEnabled;
+      if(SoundEnabled) standaloneAudio.start(iCurSoundDriver==1);
+#else
       if (SoundEnabled)
       {
           g_lpGuid = NULL;
@@ -2322,6 +2343,7 @@ BOOL DoSaver(HWND hparwnd, HINSTANCE hInstance)
           //      pDSCB->GetCaps(&caps);
           //}
       }
+#endif
 
     // tempsound
     if (SoundEnabled) dumpmsg("SoundEnabled=1"); else dumpmsg("SoundEnabled=0");
@@ -2363,7 +2385,7 @@ BOOL DoSaver(HWND hparwnd, HINSTANCE hInstance)
     if (SoundActive) dumpmsg("SoundActive=1"); else dumpmsg("SoundActive=0");
     if (SoundEmpty) dumpmsg("SoundEmpty=1"); else dumpmsg("SoundEmpty=0");
 
-    if (SoundReady)
+    if (SoundReady && pDSCB)
     {
         HRESULT hr;
         dumpmsg("starting capture buffer...");
@@ -2626,7 +2648,14 @@ BOOL CALLBACK	ConfigDialogProc(HWND	hwnd,UINT	msg,WPARAM wParam,LPARAM lParam)
 			HRESULT	hr;
 
 			//-------------- DirectSound mode	detection	---------------------
-#if	SAVER
+#if defined(STANDALONE)
+            SendDlgItemMessageA(hwnd,IDC_SOUND,CB_ADDSTRING,0,(LPARAM)"System output (default playback device)");
+            SendDlgItemMessageA(hwnd,IDC_SOUND,CB_ADDSTRING,0,(LPARAM)"Microphone (default recording device)");
+            SendDlgItemMessage(hwnd,IDC_SOUND,CB_SETITEMDATA,0,0);
+            SendDlgItemMessage(hwnd,IDC_SOUND,CB_SETITEMDATA,1,1);
+            SendDlgItemMessage(hwnd,IDC_SOUND,CB_SETCURSEL,iCurSoundDriver==1?1:0,0);
+#elif SAVER
+            iNumSoundDrivers=0;
 			g_lpGuid = NULL;
 
 			dumpmsg("calling DirectSoundCaptureEnumerate from	startup	of config	panel...");
@@ -2821,6 +2850,16 @@ BOOL CALLBACK	ConfigDialogProc(HWND	hwnd,UINT	msg,WPARAM wParam,LPARAM lParam)
 			//SetWindowText( GetDlgItem( hwnd, IDC_SLIDERTEXT3), " " );
 			//::EnableWindow(GetDlgItem( hwnd, IDC_MAGICSLIDER), false );
 			//::ShowWindow(GetDlgItem( hwnd, IDC_MAGICSLIDER), SW_HIDE );
+#if defined(STANDALONE)
+            SetWindowTextA(hwnd,"Geiss - standalone settings");
+            SetDlgItemTextA(hwnd,IDC_TEXT1,"During playback: Tab opens the audio menu; H shows help; Esc exits.");
+            SetDlgItemTextA(hwnd,IDC_TEXT2,"Output captures your default playback device. Microphone captures your default recording device. Switch sources during playback with Tab.");
+            SetDlgItemTextA(hwnd,ID_SNDVOL,"Windows Sound");
+            ShowWindow(GetDlgItem(hwnd,IDC_MAGIC),SW_HIDE);
+            ShowWindow(GetDlgItem(hwnd,IDC_MAGIC2),SW_HIDE);
+            g_bDisableCdControls=true; g_bAutostartCD=false;
+#endif
+
 #endif
 
 			// initialize	res-selection	combo	box
@@ -2947,6 +2986,9 @@ BOOL CALLBACK	ConfigDialogProc(HWND	hwnd,UINT	msg,WPARAM wParam,LPARAM lParam)
 			}
 		if (id==ID_SNDVOL)
 		{
+#if defined(STANDALONE)
+            ShellExecuteA(hwnd,"open","ms-settings:sound",NULL,NULL,SW_SHOWNORMAL);
+#else
 				STARTUPINFO	si;
 				PROCESS_INFORMATION	pi;
 				ZeroMemory(&si,	sizeof(si));
@@ -2970,6 +3012,7 @@ BOOL CALLBACK	ConfigDialogProc(HWND	hwnd,UINT	msg,WPARAM wParam,LPARAM lParam)
 				CreateProcess(szAppName, szCmdLine,	NULL,	NULL,	FALSE, CREATE_DEFAULT_ERROR_MODE,	NULL,	NULL,	&si, &pi);
 				CloseHandle(pi.hProcess);
 				CloseHandle(pi.hThread);
+#endif
 		}
 			if (id==IDABOUT)
 			{
@@ -6079,8 +6122,11 @@ void finiObjects( void )
         }
     #endif
 
+#if defined(STANDALONE)
+    standaloneAudio.stop();
+#endif
 #if SAVER
-    if (SoundEnabled && SoundReady)// && SoundActive)
+    if (pDSCB && SoundReady)// && SoundActive)
     {
         HRESULT hr;
         hr = pDSCB->Stop();
@@ -7081,23 +7127,40 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message,
             switch( wParam )
             {
                 case VK_TAB:
+#if defined(STANDALONE)
+                    {
+                        HMENU menu=CreatePopupMenu();
+                        AppendMenuA(menu,MF_STRING|(iCurSoundDriver==0?MF_CHECKED:0),1,"System output (default playback device)");
+                        AppendMenuA(menu,MF_STRING|(iCurSoundDriver==1?MF_CHECKED:0),2,"Microphone (default recording device)");
+                        AppendMenuA(menu,MF_STRING,3,"Toggle audio reaction (O)");
+                        AppendMenuA(menu,MF_STRING,4,"Help (H)");
+                        AppendMenuA(menu,MF_STRING,5,"Exit (Esc)");
+                        POINT pt; GetCursorPos(&pt);
+                        int choice=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,pt.x,pt.y,0,hWnd,NULL);
+                        DestroyMenu(menu);
+                        if(choice==1 || choice==2) {
+                            iCurSoundDriver=choice-1;
+                            standaloneAudio.start(iCurSoundDriver==1);
+                            SoundEnabled=SoundReady=SoundActive=TRUE;
+                            WriteConfigRegistry();
+                        }
+                        if(choice==3) PostMessage(hWnd,WM_CHAR,'o',0);
+                        if(choice==4) PostMessage(hWnd,WM_CHAR,'h',0);
+                        if(choice==5) TryToExit(hWnd);
+                    }
+#endif
                     dumpmsg("TAB pressed!");
                     return 0;
                     break;
 
 #if SAVER
-                case 'c':
-                case 'C':
-#if defined(STANDALONE)
-                    // Standalone playback uses the same device picker as the saver.
-                    // Select a microphone or an enabled Windows "Stereo Mix"/loopback
-                    // capture endpoint, then restart playback to apply the choice.
-                    DialogBox(hInstance, MAKEINTRESOURCE(IDD_CONFIG), hWnd,
-                              (DLGPROC)ConfigDialogProc);
-                    break;
-#endif
                 case 'o':
                 case 'O':
+#if defined(STANDALONE)
+                    SoundActive=!SoundActive;
+                    if(SoundActive) standaloneAudio.start(iCurSoundDriver==1);
+                    else standaloneAudio.stop();
+#else
                     if (SoundReady)
                     {
                         if (SoundActive)
@@ -7124,6 +7187,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message,
                             }
                         }
                     }
+#endif
                     break;
 #endif
                 case 'q':
@@ -7175,7 +7239,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message,
                     break;
                 */
 
-#if SAVER
+#if SAVER && !defined(STANDALONE)
                 case 'z':   // prev
                 case 'Z':
                     if (!g_bDisableCdControls)
@@ -8006,7 +8070,13 @@ void GetWaveData()
     if (SoundReady && SoundActive)
     {
 
-#if SAVER
+#if defined(STANDALONE)
+        standaloneAudio.read(g_SoundBuffer, BUFSIZE);
+        if(FAILED(standaloneAudio.status.load())) {
+            strcpy(szMisc,"Audio unavailable: Tab to retry/select source; check Windows sound settings");
+            SHOW_MISC_MSG=60;
+        }
+#elif SAVER
 
         void *pData[2];
         DWORD size[2];

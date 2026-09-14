@@ -80,7 +80,7 @@ target_compile_definitions(geiss PRIVATE
     _CRT_SECURE_NO_WARNINGS
     _WIN32_WINNT=0x0A00
     WINVER=0x0A00)
-target_link_libraries(geiss PRIVATE comctl32.lib ddraw.lib dsound.lib dxguid.lib winmm.lib shcore.lib)
+target_link_libraries(geiss PRIVATE comctl32.lib ddraw.lib dsound.lib dxguid.lib winmm.lib shcore.lib ole32.lib shell32.lib)
 set_target_properties(geiss PROPERTIES
     OUTPUT_NAME "Geiss"
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
