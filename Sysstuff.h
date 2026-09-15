@@ -40,6 +40,11 @@
 // --------------------------------------------------------------------------
 bool CheckMMXTechnology()
 {
+#if !defined(_M_IX86)
+    // x64 compilers do not support the legacy inline-assembly path. The modern
+    // portable renderer uses compiler-generated vector instructions instead.
+    return false;
+#else
     bool retval = TRUE;
     DWORD RegEDX;
 
@@ -70,6 +75,7 @@ bool CheckMMXTechnology()
     // floating-point emulation is on; so MMX technology is unavailable
 
     return retval;
+#endif
 }
 
 /*
