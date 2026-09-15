@@ -1154,6 +1154,10 @@ __declspec( dllimport ) void Apply_DLL_Mode();
     unsigned char VIDEO_CARD_FUCKED=0, RND=1;
     //unsigned char SHOW_TITLE=-1;
     unsigned char SHOW_DEBUG          = 0;
+#if defined(STANDALONE)
+    ULONGLONG startupHintStarted = 0;
+    bool startupHintTimerStarted = false;
+#endif
     unsigned char SHOW_MOUSECLICK_MSG = 0;
     unsigned char SHOW_LOCKED_MSG     = 0;
     unsigned char SHOW_UNLOCKED_MSG   = 0;
@@ -2030,6 +2034,14 @@ void __cdecl GeissProc( void *p )
 
             if (iStep==7 && !g_rush_map && !g_QuitASAP)
             {
+#if defined(STANDALONE)
+                // Start at the first visual frame, after configuration and initialization.
+                if (!startupHintTimerStarted)
+                {
+                    startupHintStarted = GetTickCount64();
+                    startupHintTimerStarted = true;
+                }
+#endif
                 //----------- step 2: swap buffers & put VS2 to the back surface
                 TEMPPTR = VS1;    VS1 = VS2;    VS2 = TEMPPTR;
                 #if (GRFX==1)
@@ -2069,6 +2081,14 @@ void __cdecl GeissProc( void *p )
                             SHOW_TRACK_MSG--;
                             Put_Trackmsg_To_Backbuffer();
                         }
+#if defined(STANDALONE)
+                        if (startupHintTimerStarted && GetTickCount64() - startupHintStarted < 15000
+                            && !g_bSuppressHelpMsg && !g_QuitASAP)
+                        {
+                            Put_Msg_To_Backbuffer(szMCM);
+                        }
+                        else
+#endif
                         if (SHOW_LOCKED_MSG>0 && !g_QuitASAP)
                         {
                             SHOW_LOCKED_MSG--;
@@ -6776,7 +6796,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message,
 
 
         case WM_MOUSEMOVE:
-            #if SAVER
+            #if SAVER && !defined(STANDALONE)
                 SHOW_MOUSECLICK_MSG = 30;
                 /*if (!g_QuitASAP && !g_PassDialogReq)       // condition new in v3.54 ... to fix Pwr Mgmt bug? 
                 {
